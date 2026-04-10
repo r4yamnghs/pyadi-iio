@@ -240,12 +240,16 @@ def run_noise_sweep(oversample_ratio, filter_type, freq_start=0, freq_stop=99000
     for f in range(freq_start, freq_stop + 1, freq_step):
         noiseband = np.zeros(n)
         maxbin = int(2 * f / bin_width)
-        noiseband[0:maxbin] = np.ones(maxbin)
-        noiseband *= noise_bin_amplitude
-        time_points = time_points_from_freq(noiseband, siggen_sr, True)
-        buffer = [time_points, time_points * -1.0]
 
-        siggen.push(buffer)
+        if maxbin > 0:
+            noiseband[0:maxbin] = np.ones(maxbin)
+            noiseband *= noise_bin_amplitude
+            time_points = time_points_from_freq(noiseband, siggen_sr, True)
+            buffer = [time_points, time_points * -1.0]
+            siggen.push(buffer)
+        else:
+            # f=0: no signal to generate, just measure DC noise floor
+            siggen.push([np.zeros(n), np.zeros(n)])
 
         sleep(0.25)
 

@@ -26,7 +26,7 @@ parser.add_argument(
 parser.add_argument(
     "-a",
     "--ad4080_uri",
-    default="serial:COM51,230400,8n1",
+    default="serial:COM13,230400,8n1",
     help="LibIIO context URI of the ADALM-MMSC",
 )
 parser.add_argument(
@@ -119,8 +119,8 @@ num_avg = 4
 fft_average = np.zeros(nfft // 2 + 1)
 
 for i in range(num_avg):
-    # Read one buffer of samples and convert to volts
-    data_in = ad4080.rx() * ad4080.scale / 1e6  # uV -> V
+    # Read one buffer of samples and convert to volts (scale is in uV/code)
+    data_in = ad4080.rx() * ad4080.channel[0].scale / 1e6  # uV -> V
 
     # Remove DC component
     data_in = data_in - np.average(data_in)

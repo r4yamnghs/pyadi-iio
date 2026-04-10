@@ -8,6 +8,7 @@ from time import sleep
 
 import genalyzer as gn
 import libm2k
+import matplotlib.pyplot as plt
 import numpy as np
 import workshop
 
@@ -15,10 +16,7 @@ parser = argparse.ArgumentParser(
     description="Generate a noisy signal on the M2K, record it using the AD4080ARDZ, and do a Fourier analysis."
 )
 parser.add_argument(
-    "-m",
-    "--m2k-uri",
-    default="ip:m2k.local",
-    help="LibIIO context URI of the ADALM2000",
+    "-m", "--m2k-uri", default="usb:1.16.5", help="LibIIO context URI of the ADALM2000",
 )
 args = vars(parser.parse_args())
 
@@ -105,6 +103,9 @@ sleep(0.5)
 # 4. Receive one buffer of samples
 data_in = ain.getSamples(npts)[0]
 
+# Done with hardware
+del my_m2k
+
 # 5. Analyze recorded waveform
 workshop.fourier_analysis(
     data_in,
@@ -114,3 +115,6 @@ workshop.fourier_analysis(
     ssb_fund=200,
     ssb_rest=200,
 )
+
+# Keep figures open until manually closed
+plt.show(block=True)

@@ -18,15 +18,12 @@ parser = argparse.ArgumentParser(
     description="Sweep a band of noise using the M2K, record it using the AD4080ARDZ, comparing the results to the theoretical sinc1 response, taking into account frequency folding."
 )
 parser.add_argument(
-    "-m",
-    "--m2k_uri",
-    default="ip:m2k.local",
-    help="LibIIO context URI of the ADALM2000",
+    "-m", "--m2k_uri", default="usb:1.8.5", help="LibIIO context URI of the ADALM2000",
 )
 parser.add_argument(
     "-a",
     "--ad4080_uri",
-    default="serial:COM51,230400,8n1",
+    default="serial:COM13,230400,8n1",
     help="LibIIO context URI of the EVAL-AD4080ARDZ",
 )
 args = vars(parser.parse_args())

@@ -5,12 +5,12 @@
 """
 Test script for initial 50-piece build of ADALM-MMSC boards
 """
-
 import argparse
 from sys import exit
 
 import genalyzer as gn
 import libm2k
+import matplotlib.pyplot as plt
 import workshop
 
 import adi
@@ -19,16 +19,13 @@ parser = argparse.ArgumentParser(
     description="Generate a noisy signal on the M2K, record it using the AD4080ARDZ, and do a Fourier analysis."
 )
 parser.add_argument(
-    "-m",
-    "--m2k_uri",
-    default="ip:192.168.2.1",
-    help="LibIIO context URI of the ADALM2000",
+    "-m", "--m2k_uri", default="usb:1.16.5", help="LibIIO context URI of the ADALM2000",
 )
 # parser.add_argument('-a', '--ad4080_uri', default='serial:/dev/ttyACM0,230400,8n1',
 parser.add_argument(
     "-p",
     "--ad4080_com_port",
-    default="COM17",
+    default="COM12",
     help="ADALM-MMSC port, COMx (Windows) or /dev/ttyx (Linux)",
 )
 args = vars(parser.parse_args())
@@ -65,7 +62,7 @@ aout.enableChannel(0, True)
 aout.setCyclic(True)  # Send buffer repeatedly, not just once
 
 # Connect to AD4080
-my_ad4080 = adi.ad4080("serial:" + my_port + ",230400")
+my_ad4080 = adi.ad4080("serial:" + my_port + ",115200")
 if my_ad4080 is None:
     print("Connection Error: No ADALM-MMSC device at this port.")
     exit(1)
@@ -97,7 +94,6 @@ data_in = data_in_raw * my_ad4080.channel[0].scale / 1e3  # Scale is in millivol
 
 # Done talking to hardware, close down...
 del my_ad4080
-libm2k.contextCloseAll()
 del my_m2k
 
 
@@ -121,3 +117,6 @@ if len(failed_tests) == 0:
 else:
     print("D'oh! Board fails these test(s)")
     print(failed_tests)
+
+plt.show(block=False)
+input("Press <Enter> to exit...")

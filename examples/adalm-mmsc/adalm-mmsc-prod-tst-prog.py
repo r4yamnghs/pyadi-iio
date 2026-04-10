@@ -27,7 +27,7 @@ parser.add_argument(
 parser.add_argument(
     "-p",
     "--ad4080_com_port",
-    default="COM17",
+    default="COM15",
     help="ADALM-MMSC port, COMx (Windows) or /dev/ttyx (Linux)",
 )
 args = vars(parser.parse_args())

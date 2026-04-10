@@ -6,14 +6,14 @@ import argparse
 import sys
 from time import sleep
 
-import libm2k
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, RadioButtons
-import numpy as np
-from scipy import signal
+import libm2k  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
+import numpy as np  # type: ignore
+from matplotlib.widgets import Button, RadioButtons  # type: ignore
+from scipy import signal  # type: ignore
 from sine_gen import *
 
-from adi import ad4080
+from adi import ad4080  # type: ignore
 
 # Optionally pass URI as command line argument,
 # else use default ip:analog.local
@@ -21,10 +21,7 @@ parser = argparse.ArgumentParser(
     description="Generate a noisy signal on the M2K, record it using the AD4080ARDZ, and do a Fourier analysis."
 )
 parser.add_argument(
-    "-m",
-    "--m2k_uri",
-    default="usb:1.38.5",
-    help="LibIIO context URI of the ADALM2000",
+    "-m", "--m2k_uri", default="usb:1.8.5", help="LibIIO context URI of the ADALM2000",
 )
 # parser.add_argument('-a', '--ad4080_uri', default='serial:/dev/ttyACM0,230400,8n1',
 parser.add_argument(
@@ -43,6 +40,16 @@ print("uri: " + str(my_uri))
 
 
 my_adc = ad4080(uri=my_uri, device_name="ad4080")
+
+# Increase libiio context timeout to avoid sp_blocking_read_next timeouts over serial
+try:
+    my_adc._ctx.set_timeout(15000)  # milliseconds
+except Exception:
+    # If the underlying context doesn't expose set_timeout, continue with default
+    pass
+
+# Use a slightly smaller receive buffer to reduce serial transfer time
+my_adc.rx_buffer_size = 2048
 
 # Fix this later - appears there's some things in flux...
 # print("Sampling frequency: ", my_adc.sampling_frequency)
@@ -90,17 +97,12 @@ else:
     default_index = 0
 
 ax_filter = fig1.add_axes([0.10, 0.08, 0.35, 0.10])
-rb_filter = RadioButtons(ax_filter, filter_options, active=default_index)
+rb_filter = RadioButtons(ax_filter, filter_options, active=default_index)  # type: ignore
 ax_filter.set_title("Filter")
 
 # Start sweep button
 ax_start_btn = fig1.add_axes([0.55, 0.08, 0.30, 0.10])
-btn_start = Button(
-    ax_start_btn,
-    "Start sweep",
-    color="lightgreen",
-    hovercolor="green",
-)
+btn_start = Button(ax_start_btn, "Start sweep", color="lightgreen", hovercolor="green",)
 
 
 vref = 5.0
@@ -109,14 +111,20 @@ vref = 5.0
 def start_sweep(event):
     """Callback for the 'Start sweep' button: choose filter and run sweeps."""
 
-    global my_adc
+    global my_adc, fig1
 
     selected_filter = rb_filter.value_selected
     print(f"Starting sweep with filter {selected_filter}")
     my_adc.filter_type = selected_filter
 
+    # Close the initial control window so only OSR result windows gate progress
+    try:
+        plt.close(fig1)
+    except Exception:
+        pass
+
     # Set up m2k
-    ctx = libm2k.m2kOpen()
+    ctx = libm2k.m2kOpen()  # (m2k_uri)
     if ctx is None:
         print(f"Failed to open M2K at URI: {m2k_uri}")
         return
@@ -125,32 +133,14 @@ def start_sweep(event):
 
     siggen = ctx.getAnalogOut()
 
-    # Figure 2: combined window for time domain, spectrum, and all OSR responses
-    fig2, (ax_td, ax_spec, ax_all) = plt.subplots(3, 1, num=2, figsize=(8, 8))
-    fig2.subplots_adjust(hspace=0.5)
-
-    ax_td.set_title("AD4020 Time Domain Data")
-    ax_td.set_xlabel("Data Point")
-    ax_td.set_ylabel("Voltage (V)")
-
-    ax_spec.set_title("AD4020 Spectrum (Volts absolute)")
-    ax_spec.set_xlabel("frequency [Hz]")
-    ax_spec.set_ylabel("Voltage (V)")
-
-    ax_all.set_title("All Oversampling Ratios")
-    ax_all.set_xlabel("frequency [Hz]")
-    ax_all.set_ylabel("response (dB)")
-
-    # Now that the results window exists, close the initial Figure 1
-    plt.close(fig1)
-
     # for oversample_ratio in my_adc.oversampling_ratio_available:
     for oversample_ratio in [1024, 512, 256]:
         my_adc.oversampling_ratio = int(oversample_ratio)
         print("Sweeping with oversampling ratio ", my_adc.oversampling_ratio)
         fs = []
         amps = []
-        for f in np.linspace(4.0, 5.5, num=50):  # Sweep 3kHz to 300kHz in 1kHz steps
+        # Use fewer frequency points so the sweep completes faster
+        for f in np.linspace(4.0, 5.5, num=25):  # logarithmic sweep over same range
             f = int(10 ** f)  # logarithmic freqs
 
             # call buffer generator, returns sample rate and buffer
@@ -165,12 +155,26 @@ def start_sweep(event):
 
             siggen.push([buffer0, buffer1])
 
-            sleep(0.25)
+            # Slightly shorter settle time between points to speed up the sweep
+            sleep(0.15)
 
             print("Frequency: ", f)
 
-            data = my_adc.rx()
-            data = my_adc.rx()
+            # Try a few times in case of transient RX timeouts over serial
+            for attempt in range(3):
+                try:
+                    data = my_adc.rx()
+                    data = my_adc.rx()
+                    break
+                except OSError as e:
+                    print(
+                        f"RX timeout (attempt {attempt+1}/3) at f={f} Hz, OSR={oversample_ratio}: {e}"
+                    )
+                    if attempt == 2:
+                        print("Giving up on sweep due to repeated RX timeouts.")
+                        siggen.stop()
+                        libm2k.contextClose(ctx)
+                        return
 
             x = np.arange(0, len(data))
             voltage = data * 2.0 * vref / (2 ** 20)
@@ -183,26 +187,49 @@ def start_sweep(event):
 
         amps_db = 20 * np.log10(amps / np.sqrt(4.0))  # 4V is p-p amplitude
 
-        # Update combined figure: response vs frequency for this OSR
-        ax_all.semilogx(fs, amps_db, linestyle="dashed", marker="o", ms=2, label=f"OSR={oversample_ratio}")
-
+        # Compute spectrum for the last acquisition at this OSR
         f_axis, Pxx_spec = signal.periodogram(
             ac, 40000000.0, window="flattop", scaling="spectrum"
         )
         Pxx_abs = np.sqrt(Pxx_spec)
 
-        # Time-domain and spectrum plots
-        ax_td.plot(x, voltage)
-        ax_spec.semilogy(f_axis, Pxx_abs)
-        ax_spec.set_ylim([1e-6, 4])
+        # Create a window immediately for this OSR so results appear as soon as each sweep finishes
+        fig_osr, (ax_td_osr, ax_spec_osr, ax_resp_osr) = plt.subplots(
+            3, 1, figsize=(8, 8)
+        )
+        fig_osr.subplots_adjust(hspace=0.5)
 
-    ax_all.legend(title="OSR")
+        # Time-domain plot (last acquisition for this OSR)
+        ax_td_osr.set_title(
+            f"AD4080 Time Domain Data (OSR={oversample_ratio}, filter={my_adc.filter_type})"
+        )
+        ax_td_osr.plot(x, voltage)
+        ax_td_osr.set_xlabel("Data Point")
+        ax_td_osr.set_ylabel("Voltage (V)")
+
+        # Spectrum plot
+        ax_spec_osr.set_title("AD4080 Spectrum (Volts absolute)")
+        ax_spec_osr.semilogy(f_axis, Pxx_abs)
+        ax_spec_osr.set_ylim([1e-6, 4])
+        ax_spec_osr.set_xlabel("frequency [Hz]")
+        ax_spec_osr.set_ylabel("Voltage (V)")
+
+        # Frequency-response plot for this OSR
+        ax_resp_osr.set_title(
+            f"AD4080 Filter Frequency Response (OSR={oversample_ratio}, filter={my_adc.filter_type})"
+        )
+        ax_resp_osr.semilogx(fs, amps_db, linestyle="dashed", marker="o", ms=2)
+        ax_resp_osr.set_xlabel("frequency [Hz]")
+        ax_resp_osr.set_ylabel("response (dB)")
+
+        # Render the figure and wait until the user closes it
+        fig_osr.canvas.draw_idle()
+        while plt.fignum_exists(fig_osr.number):  # type: ignore
+            plt.pause(0.1)
 
     siggen.stop()
     libm2k.contextClose(ctx)
     print("All measurements complete. Cleaning up.")
-
-    fig2.show()
 
 
 btn_start.on_clicked(start_sweep)

@@ -40,7 +40,7 @@ from adi import ad4080
 
 # Optionally pass URI as command line argument,
 # else use default ip:analog.local
-my_uri = sys.argv[1] if len(sys.argv) >= 2 else "ip:analog.local"
+my_uri = sys.argv[1] if len(sys.argv) >= 2 else "serial:COM12,115200,8n1"
 print("uri: " + str(my_uri))
 
 my_adc = ad4080(uri=my_uri)
